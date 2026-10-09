@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="description" content="Secure authentication with 2FA">
+	<meta name="theme-color" content="#6750a4">
+	<title id="app-title">Auth App</title>
+	<link rel="manifest" href="/manifest.json">
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75'>🔐</text></svg>">
+	<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+	<div id="app">
+		<!-- Navigation -->
+		<nav class="nav-bar" id="navbar">
+			<div class="nav-container">
+				<div class="nav-title">
+					<span id="app-icon" class="app-icon">🔐</span>
+					<span id="app-name">Auth App</span>
+				</div>
+				<div class="nav-menu" id="navMenu">
+					<button class="nav-button" id="navDashboard" style="display:none;">Dashboard</button>
+					<button class="nav-button" id="navSettings" style="display:none;">Settings</button>
+					<button class="nav-button" id="navLogout" style="display:none;">Logout</button>
+				</div>
+			</div>
+		</nav>
+
+		<!-- Login/Register Screen -->
+		<div id="authScreen" class="screen active">
+			<div class="auth-container">
+				<div class="auth-card">
+					<h1 id="auth-title">Welcome</h1>
+					
+					<!-- Login Form -->
+					<form id="loginForm" class="form" style="display:none;">
+						<div class="form-group">
+							<label for="loginEmail">Email</label>
+							<input type="email" id="loginEmail" required>
+						</div>
+						<div class="form-group">
+							<label for="loginPassword">Password</label>
+							<input type="password" id="loginPassword" required>
+						</div>
+						<div class="form-group" id="totpLoginGroup" style="display:none;">
+							<label for="loginTOTP">2FA Code</label>
+							<input type="text" id="loginTOTP" placeholder="000000" maxlength="6">
+						</div>
+						<button type="submit" class="button-primary">Login</button>
+						<p class="form-toggle">Don't have an account? <a href="#" onclick="switchAuthForm(false)">Register</a></p>
+					</form>
+
+					<!-- Register Form -->
+					<form id="registerForm" class="form">
+						<div class="form-group">
+							<label for="registerEmail">Email</label>
+							<input type="email" id="registerEmail" required>
+						</div>
+						<div class="form-group">
+							<label for="registerPassword">Password</label>
+							<input type="password" id="registerPassword" required>
+						</div>
+						<div class="form-group">
+							<label for="registerConfirm">Confirm Password</label>
+							<input type="password" id="registerConfirm" required>
+						</div>
+						<button type="submit" class="button-primary">Register</button>
+						<p class="form-toggle">Already have an account? <a href="#" onclick="switchAuthForm(true)">Login</a></p>
+					</form>
+				</div>
+			</div>
+		</div>
+
+		<!-- Dashboard Screen -->
+		<div id="dashboardScreen" class="screen" style="display:none;">
+			<div class="container">
+				<div class="card">
+					<h2>User Profile</h2>
+					<div class="user-info">
+						<p><strong>Email:</strong> <span id="userEmail"></span></p>
+						<p><strong>Member Since:</strong> <span id="userCreated"></span></p>
+						<p><strong>Last Login:</strong> <span id="userLastLogin"></span></p>
+					</div>
+				</div>
+
+				<div class="card">
+					<h2>Two-Factor Authentication</h2>
+					<div id="twoFAStatus"></div>
+				</div>
+
+				<div class="card">
+					<h2>Change Password</h2>
+					<form id="passwordForm" class="form">
+						<div class="form-group">
+							<label for="oldPassword">Current Password</label>
+							<input type="password" id="oldPassword" required>
+						</div>
+						<div class="form-group">
+							<label for="newPassword">New Password</label>
+							<input type="password" id="newPassword" required>
+						</div>
+						<div class="form-group">
+							<label for="confirmPassword">Confirm Password</label>
+							<input type="password" id="confirmPassword" required>
+						</div>
+						<button type="submit" class="button-primary">Update Password</button>
+					</form>
+				</div>
+
+				<!-- Admin Panel -->
+				<div id="adminPanel" style="display:none;">
+					<div class="card">
+						<h2>Admin Settings</h2>
+						<form id="settingsForm" class="form">
+							<div class="form-group">
+								<label for="appName">App Name</label>
+								<input type="text" id="appName" required>
+							</div>
+							<div class="form-group">
+								<label for="appIcon">App Icon</label>
+								<input type="text" id="appIcon" required maxlength="10">
+							</div>
+							<div class="form-group">
+								<label for="appDescription">App Description</label>
+								<textarea id="appDescription"></textarea>
+							</div>
+							<div class="form-group">
+								<label>
+									<input type="checkbox" id="publicSignup">
+									Allow Public Signup
+								</label>
+							</div>
+							<button type="submit" class="button-primary">Save Settings</button>
+						</form>
+					</div>
+
+					<div class="card">
+						<h2>Users</h2>
+						<div id="usersList" class="users-table"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Setup 2FA Screen -->
+		<div id="setup2FAScreen" class="screen" style="display:none;">
+			<div class="auth-container">
+				<div class="auth-card">
+					<h2>Enable Two-Factor Authentication</h2>
+					<div id="qrCodeContainer" class="qr-container"></div>
+					<p>Scan this QR code with your authenticator app (Bitwarden, Google Authenticator, etc.)</p>
+					<div class="form-group">
+						<label for="confirmTOTP">Enter 6-digit code to confirm</label>
+						<input type="text" id="confirmTOTP" placeholder="000000" maxlength="6" required>
+					</div>
+					<div class="button-group">
+						<button class="button-primary" onclick="confirmEnable2FA()">Confirm</button>
+						<button class="button-secondary" onclick="cancelSetup2FA()">Cancel</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Toast Notifications -->
+		<div id="toast" class="toast"></div>
+	</div>
+
+	<script src="/app.js"></script>
+	<script>
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/sw.js');
+		}
+	</script>
+</body>
+</html>
