@@ -1,17 +1,15 @@
 package main
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
-	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net"
 	"net/http"
-	"net/smtp"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -52,14 +49,14 @@ type Settings struct {
 }
 
 type User struct {
-	ID              string    `json:"id"`
-	Email           string    `json:"email"`
-	PasswordHash    string    `json:"-"`
-	TwoFAEnabled    bool      `json:"two_fa_enabled"`
-	TwoFASecret     string    `json:"-"`
-	IsAdmin         bool      `json:"is_admin"`
-	CreatedAt       time.Time `json:"created_at"`
-	LastLoginAt     *time.Time `json:"last_login_at"`
+	ID           string     `json:"id"`
+	Email        string     `json:"email"`
+	PasswordHash string     `json:"-"`
+	TwoFAEnabled bool       `json:"two_fa_enabled"`
+	TwoFASecret  string     `json:"-"`
+	IsAdmin      bool       `json:"is_admin"`
+	CreatedAt    time.Time  `json:"created_at"`
+	LastLoginAt  *time.Time `json:"last_login_at"`
 }
 
 type TOTPExport struct {
@@ -82,6 +79,12 @@ type AuthResponse struct {
 
 type ErrorResponse struct {
 	Error string `json:"error"`
+}
+
+func sendJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(ErrorResponse{Error: message})
 }
 
 func main() {
@@ -205,24 +208,24 @@ func (a *App) initDB() error {
 
 func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if !a.settings.PublicSignup {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Public registration disabled"}), http.StatusForbidden)
+		sendJSONError(w, "Public registration disabled", http.StatusForbidden)
 		return
 	}
 
 	var req AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid request"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
 	if err := validateEmail(req.Email); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: err.Error()}), http.StatusBadRequest)
+		sendJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Failed to process password"}), http.StatusInternalServerError)
+		sendJSONError(w, "Failed to process password", http.StatusInternalServerError)
 		return
 	}
 
@@ -241,7 +244,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	`, userID, req.Email, string(hash), isAdmin)
 
 	if err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Email already registered"}), http.StatusConflict)
+		sendJSONError(w, "Email already registered", http.StatusConflict)
 		return
 	}
 
@@ -252,18 +255,18 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid request"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
 	user, err := a.getUserByEmail(req.Email)
 	if err != nil || user == nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid credentials"}), http.StatusUnauthorized)
+		sendJSONError(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid credentials"}), http.StatusUnauthorized)
+		sendJSONError(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
@@ -276,7 +279,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if user.TwoFAEnabled {
 		if !a.verifyTOTP(user.TwoFASecret, req.TOTPCode) {
-			http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid 2FA code"}), http.StatusUnauthorized)
+			sendJSONError(w, "Invalid 2FA code", http.StatusUnauthorized)
 			return
 		}
 	}
@@ -294,18 +297,18 @@ func (a *App) handleVerify2FA(w http.ResponseWriter, r *http.Request) {
 		TOTPCode string `json:"totp_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid request"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
 	user, err := a.getUserByEmail(req.Email)
 	if err != nil || user == nil || !user.TwoFAEnabled {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid request"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
 	if !a.verifyTOTP(user.TwoFASecret, req.TOTPCode) {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid code"}), http.StatusUnauthorized)
+		sendJSONError(w, "Invalid code", http.StatusUnauthorized)
 		return
 	}
 
@@ -320,7 +323,7 @@ func (a *App) handleEnable2FA(w http.ResponseWriter, r *http.Request, user *User
 		AccountName: user.Email,
 	})
 	if err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Failed to generate 2FA"}), http.StatusInternalServerError)
+		sendJSONError(w, "Failed to generate 2FA", http.StatusInternalServerError)
 		return
 	}
 
@@ -336,12 +339,12 @@ func (a *App) handleDisable2FA(w http.ResponseWriter, r *http.Request, user *Use
 		TOTPCode string `json:"totp_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid request"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
 	if !a.verifyTOTP(user.TwoFASecret, req.TOTPCode) {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid code"}), http.StatusUnauthorized)
+		sendJSONError(w, "Invalid code", http.StatusUnauthorized)
 		return
 	}
 
@@ -353,7 +356,7 @@ func (a *App) handleDisable2FA(w http.ResponseWriter, r *http.Request, user *Use
 
 func (a *App) handleExport2FA(w http.ResponseWriter, r *http.Request, user *User) {
 	if !user.TwoFAEnabled {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "2FA not enabled"}), http.StatusBadRequest)
+		sendJSONError(w, "2FA not enabled", http.StatusBadRequest)
 		return
 	}
 
@@ -372,16 +375,15 @@ func (a *App) handleExport2FA(w http.ResponseWriter, r *http.Request, user *User
 func (a *App) handleImport2FA(w http.ResponseWriter, r *http.Request, user *User) {
 	var imports []TOTPExport
 	if err := json.NewDecoder(r.Body).Decode(&imports); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid JSON"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
 	if len(imports) == 0 {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "No imports provided"}), http.StatusBadRequest)
+		sendJSONError(w, "No imports provided", http.StatusBadRequest)
 		return
 	}
 
-	// Use first import
 	imp := imports[0]
 	a.db.Exec("UPDATE users SET two_fa_enabled = 1, two_fa_secret = ? WHERE id = ?", imp.Secret, user.ID)
 
@@ -400,13 +402,13 @@ func (a *App) handleChangePassword(w http.ResponseWriter, r *http.Request, user 
 		NewPassword string `json:"new_password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid request"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
 	dbUser, _ := a.getUserByID(user.ID)
 	if err := bcrypt.CompareHashAndPassword([]byte(dbUser.PasswordHash), []byte(req.OldPassword)); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Current password incorrect"}), http.StatusUnauthorized)
+		sendJSONError(w, "Current password incorrect", http.StatusUnauthorized)
 		return
 	}
 
@@ -420,7 +422,7 @@ func (a *App) handleChangePassword(w http.ResponseWriter, r *http.Request, user 
 func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request, admin *User) {
 	var settings Settings
 	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid request"}), http.StatusBadRequest)
+		sendJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
@@ -443,7 +445,7 @@ func (a *App) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleListUsers(w http.ResponseWriter, r *http.Request, admin *User) {
 	rows, err := a.db.Query("SELECT id, email, two_fa_enabled, is_admin, created_at, last_login_at FROM users")
 	if err != nil {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Database error"}), http.StatusInternalServerError)
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -462,7 +464,7 @@ func (a *App) handleListUsers(w http.ResponseWriter, r *http.Request, admin *Use
 func (a *App) handleDeleteUser(w http.ResponseWriter, r *http.Request, admin *User) {
 	id := r.PathValue("id")
 	if id == admin.ID {
-		http.Error(w, json.Marshal(ErrorResponse{Error: "Cannot delete self"}), http.StatusBadRequest)
+		sendJSONError(w, "Cannot delete self", http.StatusBadRequest)
 		return
 	}
 
@@ -476,25 +478,25 @@ func (a *App) authenticate(next func(http.ResponseWriter, *http.Request, *User))
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, json.Marshal(ErrorResponse{Error: "Unauthorised"}), http.StatusUnauthorized)
+			sendJSONError(w, "Unauthorised", http.StatusUnauthorized)
 			return
 		}
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid token"}), http.StatusUnauthorized)
+			sendJSONError(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
 		userID, err := a.verifyToken(parts[1])
 		if err != nil {
-			http.Error(w, json.Marshal(ErrorResponse{Error: "Invalid token"}), http.StatusUnauthorized)
+			sendJSONError(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
 		user, err := a.getUserByID(userID)
 		if err != nil || user == nil {
-			http.Error(w, json.Marshal(ErrorResponse{Error: "User not found"}), http.StatusUnauthorized)
+			sendJSONError(w, "User not found", http.StatusUnauthorized)
 			return
 		}
 
@@ -506,7 +508,7 @@ func (a *App) authenticateAdmin(next func(http.ResponseWriter, *http.Request, *U
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHandler := a.authenticate(func(w http.ResponseWriter, r *http.Request, user *User) {
 			if !user.IsAdmin {
-				http.Error(w, json.Marshal(ErrorResponse{Error: "Admin access required"}), http.StatusForbidden)
+				sendJSONError(w, "Admin access required", http.StatusForbidden)
 				return
 			}
 			next(w, r, user)
@@ -546,18 +548,42 @@ func (a *App) verifyTOTP(secret, code string) bool {
 }
 
 func (a *App) generateToken(userID string) string {
-	h := sha256.New()
-	h.Write([]byte(userID + a.config.JWTSecret + time.Now().String()))
-	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	payload := userID + ":" + timestamp
+	mac := hmac.New(sha256.New, []byte(a.config.JWTSecret))
+	mac.Write([]byte(payload))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	return base64.URLEncoding.EncodeToString([]byte(payload + ":" + sig))
 }
 
 func (a *App) verifyToken(token string) (string, error) {
-	// Simplified token verification; in production, use proper JWT
 	if token == "" {
 		return "", fmt.Errorf("empty token")
 	}
-	// For now, store tokens in memory or database for validation
-	return "", fmt.Errorf("token verification not implemented")
+	raw, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		return "", fmt.Errorf("invalid token encoding")
+	}
+	parts := strings.Split(string(raw), ":")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid token format")
+	}
+	userID, tsStr, sig := parts[0], parts[1], parts[2]
+	ts, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid token timestamp")
+	}
+	// Token valid for 7 days
+	if time.Now().Unix()-ts > 604800 || time.Now().Unix() < ts-60 {
+		return "", fmt.Errorf("token expired")
+	}
+	mac := hmac.New(sha256.New, []byte(a.config.JWTSecret))
+	mac.Write([]byte(userID + ":" + tsStr))
+	expectedSig := hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sig), []byte(expectedSig)) {
+		return "", fmt.Errorf("invalid token signature")
+	}
+	return userID, nil
 }
 
 func validateEmail(email string) error {
