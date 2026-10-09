@@ -1,0 +1,14 @@
+github.com/boombuler/barcode v1.0.1 h1:NDBbRoM00oPZpg2q7d1delrp62XRQsxGYAi4dsomEF0=
+github.com/boombuler/barcode v1.0.1/go.mod h1:pabWEgbWU0FSJ845dufrAqY3663sVCVnH5p/9203f8=
+github.com/google/uuid v1.5.0 h1:1mNM0qseay0SGplucMhnkZb91BcbalcD93FiiTvqtOU=
+github.com/google/uuid v1.5.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpNw/VLAWeAwcskqSAxV0=
+github.com/joho/godotenv v1.5.1 h1:7P4SfwW0WJcJERKE+FtMRg0go2mnnimtr0Dl3GBApw=
+github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DxwEIIwNE=
+github.com/mattn/go-sqlite3 v1.14.19 h1:fhGleo2h1p8tVChob4I9HpmVFIAkJ2fByJ796P7L/c=
+github.com/mattn/go-sqlite3 v1.14.19/go.mod h1:NyWgC/yNuGj7Q9rpYRZvM/IKiLaWX16hZDs7oa4Sw0=
+github.com/pquerna/otp v1.4.0 h1:wZvl1TIVxKmnSLQsRe+2JJDv2C9cirAvsHWfqngoYs=
+github.com/pquerna/otp v1.4.0/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DxwEIIwNE=
+golang.org/x/crypto v0.17.0 h1:r8bRNjWL3GshPW2gkOv/GLac9mRT8ZGladlVIclWeU=
+golang.org/x/crypto v0.17.0/go.mod h1:gCAAfMLgwOJRpqjZxvrYmym7zyan+AIUcLDnB17zNw=
+golang.org/x/image v0.14.0 h1:tNgSKgHMYsgUnK7QQ69IHVc/v3WHTkQvVjJbpsH630=
+golang.org/x/image v0.14.0/go.mod h1:HUYqC05R2ZcZ3ejNQsJ0lLDwohxyl467E+mYLoDfsVQ=

@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  auth-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-app
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_PATH: "/data/auth.db"
+      APP_NAME: "${APP_NAME:-Auth App}"
+      APP_ICON: "${APP_ICON:-🔐}"
+      APP_DESCRIPTION: "${APP_DESCRIPTION:-Secure authentication with 2FA}"
+      ALLOW_PUBLIC_SIGNUP: "${ALLOW_PUBLIC_SIGNUP:-true}"
+      JWT_SECRET: "${JWT_SECRET:-change-this-in-production}"
+      SMTP_HOST: "${SMTP_HOST:-smtp.gmail.com}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD}"
+      SMTP_FROM: "${SMTP_FROM:-noreply@example.com}"
+    volumes:
+      - auth-data:/data
+      - ./static:/app/static:ro
+    restart: unless-stopped
+    networks:
+      - auth-network
+    labels:
+      - "com.example.description=Auth application with 2FA"
+
+  # Optional: MariaDB service (uncomment to use)
+  # mariadb:
+  #   image: mariadb:11.0
+  #   container_name: auth-mariadb
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-rootpassword}"
+  #     MYSQL_DATABASE: "${MYSQL_DATABASE:-auth_db}"
+  #     MYSQL_USER: "${MYSQL_USER:-authuser}"
+  #     MYSQL_PASSWORD: "${MYSQL_PASSWORD:-authpassword}"
+  #   volumes:
+  #     - auth-mysql:/var/lib/mysql
+  #   restart: unless-stopped
+  #   networks:
+  #     - auth-network
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  auth-data:
+    driver: local
+  # auth-mysql:
+  #   driver: local
+
+networks:
+  auth-network:
+    driver: bridge
